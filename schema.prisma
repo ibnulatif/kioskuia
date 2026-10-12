@@ -1,0 +1,306 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  SELLER
+  ADMIN
+}
+
+enum ListingType {
+  SALE
+  RENT
+}
+
+enum ListingStatus {
+  PENDING
+  PUBLISHED
+  REJECTED
+  BLOCKED
+  SOLD
+  RENTED
+}
+
+enum Condition {
+  NEW
+  USED
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum PromoPlan {
+  BASIC
+  PREMIUM
+  PRO
+}
+
+enum TransactionStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+}
+
+enum ReportReason {
+  FRAUD
+  WRONG_PRICE
+  FAKE_PHOTO
+  FAKE_LOCATION
+  SUSPICIOUS_DOCUMENT
+  OTHER
+}
+
+model User {
+  id             String             @id @default(cuid())
+  name           String
+  email          String             @unique
+  phone          String?
+  passwordHash   String?
+  avatar         String?
+  role           Role               @default(USER)
+  verifiedStatus VerificationStatus @default(UNVERIFIED)
+  blocked        Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  listings       Listing[]
+  favorites      Favorite[]
+  messages       Message[]
+  buyerChats     Conversation[]     @relation("BuyerConversations")
+  sellerChats    Conversation[]     @relation("SellerConversations")
+  reports        Report[]
+  verifications  Verification[]
+  transactions   Transaction[]
+  notifications  Notification[]
+  reviewsGiven   Review[]           @relation("ReviewAuthor")
+  reviewsGot     Review[]           @relation("ReviewSeller")
+  auditLogs      AuditLog[]
+}
+
+model Category {
+  id       String    @id @default(cuid())
+  name     String    @unique
+  slug     String    @unique
+  icon     String?
+  listings Listing[]
+}
+
+model Listing {
+  id           String        @id @default(cuid())
+  sellerId     String
+  categoryId   String?
+  title        String
+  slug         String        @unique
+  description  String
+  type         ListingType
+  price        BigInt
+  negotiable   Boolean       @default(true)
+  province     String
+  city         String
+  district     String
+  village      String?
+  address      String
+  latitude     Float?
+  longitude    Float?
+  landArea     Float?
+  buildingArea Float?
+  width        Float?
+  length       Float?
+  floor        Int           @default(1)
+  yearBuilt    Int?
+  electricity  String?
+  water        String?
+  condition    Condition     @default(USED)
+  facilities   String[]
+  status       ListingStatus @default(PENDING)
+  rejectReason String?
+  featured     Boolean       @default(false)
+  plan         PromoPlan     @default(BASIC)
+  planUntil    DateTime?
+  views        Int           @default(0)
+  videoUrl     String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  seller        User           @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category      Category?      @relation(fields: [categoryId], references: [id])
+  images        ListingImage[]
+  favorites     Favorite[]
+  conversations Conversation[]
+  reports       Report[]
+  promotions    Promotion[]
+  transactions  Transaction[]
+  reviews       Review[]
+
+  @@index([status, createdAt])
+  @@index([city])
+  @@index([type, status])
+  @@index([price])
+  @@index([sellerId])
+  @@index([plan, status])
+}
+
+model ListingImage {
+  id        String  @id @default(cuid())
+  listingId String
+  url       String
+  isPrimary Boolean @default(false)
+  position  Int     @default(0)
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId])
+}
+
+model Favorite {
+  userId    String
+  listingId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@id([userId, listingId])
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  listingId String
+  buyerId   String
+  sellerId  String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  listing   Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyer     User      @relation("BuyerConversations", fields: [buyerId], references: [id], onDelete: Cascade)
+  seller    User      @relation("SellerConversations", fields: [sellerId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@unique([listingId, buyerId])
+  @@index([sellerId])
+  @@index([buyerId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  senderId       String
+  body           String
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+model Report {
+  id         String       @id @default(cuid())
+  listingId  String
+  reporterId String
+  reason     ReportReason
+  detail     String?
+  resolved   Boolean      @default(false)
+  createdAt  DateTime     @default(now())
+  listing    Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  reporter   User         @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+}
+
+model Verification {
+  id          String             @id @default(cuid())
+  userId      String
+  fullName    String
+  phone       String
+  ktpUrl      String
+  selfieUrl   String
+  docUrl      String?
+  status      VerificationStatus @default(PENDING)
+  rejectNote  String?
+  createdAt   DateTime           @default(now())
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Transaction {
+  id        String            @id @default(cuid())
+  orderId   String            @unique
+  userId    String
+  listingId String
+  plan      PromoPlan
+  amount    Int
+  status    TransactionStatus @default(PENDING)
+  snapToken String?
+  createdAt DateTime          @default(now())
+  paidAt    DateTime?
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listing   Listing           @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  promotion Promotion?
+
+  @@index([status])
+}
+
+model Promotion {
+  id            String      @id @default(cuid())
+  listingId     String
+  transactionId String      @unique
+  plan          PromoPlan
+  startsAt      DateTime
+  endsAt        DateTime
+  listing       Listing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  href      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  listingId String
+  authorId  String
+  sellerId  String
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  author    User     @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  seller    User     @relation("ReviewSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, authorId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  target    String?
+  meta      Json?
+  createdAt DateTime @default(now())
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+}
+
+model Banner {
+  id       String  @id @default(cuid())
+  title    String
+  imageUrl String
+  href     String?
+  active   Boolean @default(true)
+}
